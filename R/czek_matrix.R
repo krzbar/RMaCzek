@@ -372,68 +372,72 @@ czek_matrix = function (x, order = "OLO", n_classes = 5, interval_breaks = NULL,
         membership[breakpoints[i]:(breakpoints[i + 1] - 1), i] = 1
       }
     }
-    else if(cluster_type == "fuzzy"){
-      cl = FuzzyDBScan::FuzzyDBScan$new(res_fuzzy$membership, eps, pts)
-      
-      d1 = ecp::e.divisive(as.matrix(cl$dense), min.size = min.size, k = num_cluster-1)
-      
-      differences <- d$cluster != d1$cluster
-      different_indices <- which(differences)
-      
-      diff_areas <- list()
-      current_area <- c()
-      for (i in seq_along(different_indices)) {
-        if (i == 1 || different_indices[i] != different_indices[i - 1] + 1) {
-          if (length(current_area) > 0) {
-            diff_areas[[length(diff_areas) + 1]] <- c(current_area[1], current_area[length(current_area)] + 1)
-          }
-          current_area <- different_indices[i]
-        } else {
-          current_area <- c(current_area, different_indices[i])
-        }
-      }
-      if (length(current_area) > 0) {
-        diff_areas[[length(diff_areas) + 1]] <- c(current_area[1], current_area[length(current_area)] + 1)
-      }
-      
-      
-      for (i in 1:num_cluster){
-        lower = breakpoints[i]
-        upper = breakpoints[i+1]
+    else if (cluster_type == "fuzzy") {
+      if (requireNamespace("FuzzyDBScan", quietly = TRUE)) {
         
-        for (diff in diff_areas){
-          if (lower >= diff[1] && lower <= diff[2]){
-            lower = diff[1]
+        cl = FuzzyDBScan::FuzzyDBScan$new(res_fuzzy$membership, eps, pts)
+        
+        d1 = ecp::e.divisive(as.matrix(cl$dense), min.size = min.size, k = num_cluster - 1)
+        
+        differences <- d$cluster != d1$cluster
+        different_indices <- which(differences)
+        
+        diff_areas <- list()
+        current_area <- c()
+        for (i in seq_along(different_indices)) {
+          if (i == 1 || different_indices[i] != different_indices[i - 1] + 1) {
+            if (length(current_area) > 0) {
+              diff_areas[[length(diff_areas) + 1]] <- c(current_area[1], current_area[length(current_area)] + 1)
+            }
+            current_area <- different_indices[i]
+          } else {
+            current_area <- c(current_area, different_indices[i])
           }
-          if (upper >= diff[1] && upper <= diff[2]){
-            upper = diff[2]
+        }
+        if (length(current_area) > 0) {
+          diff_areas[[length(diff_areas) + 1]] <- c(current_area[1], current_area[length(current_area)] + 1)
+        }
+        
+        for (i in 1:num_cluster) {
+          lower = breakpoints[i]
+          upper = breakpoints[i + 1]
+          
+          for (diff in diff_areas) {
+            if (lower >= diff[1] && lower <= diff[2]) {
+              lower = diff[1]
+            }
+            if (upper >= diff[1] && upper <= diff[2]) {
+              upper = diff[2]
+            }
+            cluster_boundary[i, ] = c(lower - 0.5, n - lower + 1.5, upper - 0.5, n - upper + 1.5)
+            cluster_id[[i]] = c(lower:(upper - 1))
+            membership[breakpoints[i]:(breakpoints[i + 1] - 1), i] = 1
           }
-          cluster_boundary[i,] = c(lower-0.5, n-lower+1.5, upper-0.5, n-upper+1.5)
-          cluster_id[[i]] = c(lower:(upper-1))
-          membership[breakpoints[i]:(breakpoints[i+1]-1), i] = 1
         }
+        
+        temp = unlist(cluster_id)
+        fuzzy_id = temp[duplicated(temp)]
+        
+        for (i in 1:nrow(res_fuzzy$membership)) {
+          if (i %in% fuzzy_id) {
+            foo = which(sapply(cluster_id, function(x) i %in% x))
+            current_membership = rep(0, num_cluster)
+            current_membership[foo] = res_fuzzy$membership[i, foo] * (1 + alpha * (cl$dense[i] - theta))
+            current_membership <- current_membership / sum(current_membership)
+            membership[i, ] = current_membership
+            cluster_res[i] = which.max(current_membership)
+          } else {
+            membership[i, ] = res_fuzzy$membership[i, ]
+          }
+        }
+        
+      } else {
+        stop("Cannot perform fuzzy clustering: FuzzyDBScan not available. Please install it from, e.g., CRAN's archive.")
       }
-      
-      temp = unlist(cluster_id)
-      fuzzy_id = temp[duplicated(temp)]
-      
-      for (i in 1:nrow(res_fuzzy$membership)){
-        if (i %in% fuzzy_id){
-          foo = which(sapply(cluster_id, function(x) i %in% x))
-          current_membership = rep(0, num_cluster)
-          current_membership[foo] = res_fuzzy$membership[i, foo] * (1 + alpha * (cl$dense[i] - theta))
-          current_membership <- current_membership / sum(current_membership)
-          membership[i,] = current_membership
-          # cluster_res[i] = sample(1:num_cluster, 1, prob = current_membership)
-          cluster_res[i] = which.max(current_membership)
-        }
-        else{
-          membership[i,] = res_fuzzy$membership[i,]
-        }
-      }
-    }else {
+    } else {
       stop("Wrong cluster method.")
     }
+    
     names(cluster_res) = rownames(x)[new_order]
     rownames(membership) = rownames(x)[new_order]
     attr(czek_matrix, "cluster") <- TRUE
